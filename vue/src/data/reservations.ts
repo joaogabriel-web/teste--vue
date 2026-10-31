@@ -1,6 +1,6 @@
 import type { Sala } from './rooms'
 
-export type SituacaoReserva = 'pendente' | 'aprovada' | 'rejeitada'
+export type SituacaoReserva = 'pendente' | 'aprovada' | 'cancelada'
 
 export type Reserva = {
   sala: Sala
