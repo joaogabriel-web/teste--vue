@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, reactive, ref, watch } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import ReservationPage from './components/ReservationPage.vue'
 import {
   getLegalDocumentSections,
   getLegalDocumentTitle,
@@ -7,6 +8,7 @@ import {
 
 const currentPath = ref(window.location.pathname)
 const isRecoveryPage = computed(() => currentPath.value === '/recuperar-senha')
+const isReservationsPage = computed(() => currentPath.value === '/reservas')
 const isLegalPage = computed(() =>
   ['/termos-de-uso', '/privacidade'].includes(currentPath.value),
 )
@@ -15,6 +17,9 @@ const email = ref('')
 const password = ref('')
 const showPassword = ref(false)
 const submitted = ref(false)
+const isSubmitting = ref(false)
+const loginMessage = ref('')
+const logoutError = ref('')
 const recoveryError = ref('')
 const recoveryMessage = ref('')
 
@@ -22,22 +27,96 @@ const documentSections = computed(() => getLegalDocumentSections(isPrivacyPage.v
 const documentTitle = computed(() => getLegalDocumentTitle(isPrivacyPage.value))
 
 watch(
-  [isRecoveryPage, isLegalPage, documentTitle],
-  ([recovery, legal, title]) => {
-    document.title = legal ? `${title} | reserve.me` : recovery ? 'Recuperar senha | reserve.me' : 'Entrar | reserve.me'
+  [isRecoveryPage, isLegalPage, isReservationsPage, documentTitle],
+  ([recovery, legal, reservations, title]) => {
+    document.title = legal
+      ? `${title} | reserve.me`
+      : reservations
+        ? 'Reservar uma sala | reserve.me'
+        : recovery
+          ? 'Recuperar senha | reserve.me'
+          : 'Entrar | reserve.me'
   },
   { immediate: true },
 )
+
+function syncPath() {
+  currentPath.value = window.location.pathname
+}
+
+function navigate(path: string) {
+  window.history.pushState({}, '', path)
+  currentPath.value = path
+}
+
+onMounted(() => {
+  window.addEventListener('popstate', syncPath)
+  if (isReservationsPage.value) void verifyReservationSession()
+})
+onUnmounted(() => window.removeEventListener('popstate', syncPath))
+
+watch(isReservationsPage, (isOpen) => {
+  if (isOpen) void verifyReservationSession()
+})
 
 const errors = reactive({
   email: false,
   password: false,
 })
 
-function handleSubmit() {
+async function verifyReservationSession() {
+  try {
+    const response = await fetch('/api/auth/me')
+    if (response.status === 401) {
+      navigate('/')
+      return
+    }
+    if (!response.ok) throw new Error(`Falha ao validar a sessão: ${response.status}`)
+    logoutError.value = ''
+  } catch (error) {
+    console.error('Não foi possível validar a sessão do usuário.', error)
+    navigate('/')
+    loginMessage.value = 'Não foi possível conectar ao serviço de autenticação.'
+  }
+}
+
+async function handleSubmit() {
   submitted.value = true
   errors.email = !email.value.trim()
   errors.password = !password.value.trim()
+  loginMessage.value = ''
+  if (errors.email || errors.password) return
+
+  isSubmitting.value = true
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email.value, password: password.value }),
+    })
+    const result = await response.json()
+    if (!response.ok) {
+      loginMessage.value = result.error ?? 'Não foi possível entrar. Tente novamente.'
+      return
+    }
+    navigate('/reservas')
+  } catch (error) {
+    console.error('Não foi possível concluir o login.', error)
+    loginMessage.value = 'Não foi possível conectar ao serviço de autenticação.'
+  } finally {
+    isSubmitting.value = false
+  }
+}
+
+async function handleLogout() {
+  try {
+    const response = await fetch('/api/auth/logout', { method: 'POST' })
+    if (!response.ok) throw new Error(`Falha ao encerrar a sessão: ${response.status}`)
+    navigate('/')
+  } catch (error) {
+    console.error('Não foi possível encerrar a sessão.', error)
+    logoutError.value = 'Não foi possível sair. Verifique a conexão e tente novamente.'
+  }
 }
 
 function handleRecoverySubmit() {
@@ -59,7 +138,13 @@ function handleRecoverySubmit() {
 
 <template>
   <main class="login-page">
-    <div v-if="isLegalPage" class="legal-page">
+    <ReservationPage
+      v-if="isReservationsPage"
+      :logout-error="logoutError"
+      @logout="handleLogout"
+    />
+
+    <div v-else-if="isLegalPage" class="legal-page">
       <header class="legal-header">
         <a class="brand legal-brand" href="/" aria-label="reserve.me - página inicial">
           <span class="brand-mark" aria-hidden="true">
@@ -225,7 +310,12 @@ function handleRecoverySubmit() {
         >
           Obrigatório
         </p>
-        <button class="submit-button" type="submit">Entrar</button>
+        <p v-if="loginMessage" class="form-required-alert" role="alert">
+          {{ loginMessage }}
+        </p>
+        <button class="submit-button" type="submit" :disabled="isSubmitting">
+          {{ isSubmitting ? 'Entrando...' : 'Entrar' }}
+        </button>
         <a class="forgot-link" href="/recuperar-senha">Esqueceu sua senha?</a>
       </form>
 

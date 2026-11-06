@@ -1,1 +1,6 @@
 voce e um dev frontend senior. e vai criar uma tela de termos de uso e privacidade.
+
+faça um teste nesse codigo priorisando: 
+conflito de horarios, 
+
+Criar o backend para fazer login, criar testes automatizados e criar documentaçao com jsdoc
