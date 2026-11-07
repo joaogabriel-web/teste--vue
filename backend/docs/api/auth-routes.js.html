@@ -1,0 +1,195 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>JSDoc: Source: auth-routes.js</title>
+
+    <script src="scripts/prettify/prettify.js"> </script>
+    <script src="scripts/prettify/lang-css.js"> </script>
+    <!--[if lt IE 9]>
+      <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+    <link type="text/css" rel="stylesheet" href="styles/prettify-tomorrow.css">
+    <link type="text/css" rel="stylesheet" href="styles/jsdoc-default.css">
+</head>
+
+<body>
+
+<div id="main">
+
+    <h1 class="page-title">Source: auth-routes.js</h1>
+
+    
+
+
+
+    
+    <section>
+        <article>
+            <pre class="prettyprint source linenums"><code>import { randomBytes, createHash } from 'node:crypto'
+import { Router } from 'express'
+import bcrypt from 'bcryptjs'
+
+const SESSION_COOKIE = 'reserve_me_session'
+const SESSION_DURATION_MS = 8 * 60 * 60 * 1000
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync('reserve-me-invalid-login-check', 12)
+
+/**
+ * @typedef {Object} AuthRouterOptions
+ * @property {Object} authRepository Métodos de persistência de contas e sessões.
+ * @property {boolean} cookieSecure Define se os cookies exigem HTTPS.
+ */
+
+/**
+ * Cria endpoints de autenticação com usuários e sessões persistidos no MySQL.
+ *
+ * @param {AuthRouterOptions} options Dependências de autenticação e opções do cookie.
+ * @returns {Object} Roteador montado em `/api/auth`.
+ */
+export function createAuthRouter({ authRepository, cookieSecure }) {
+  const router = Router()
+  const cookieOptions = {
+    httpOnly: true,
+    secure: cookieSecure,
+    sameSite: 'lax',
+    path: '/',
+  }
+
+  /**
+   * Valida as credenciais, cria uma sessão revogável no banco e define o cookie.
+   *
+   * @route POST /api/auth/login
+   * @param {Object} req
+   * @param {Object} res
+   * @returns {Promise&lt;void>}
+   */
+  router.post('/login', async (req, res) => {
+    const email = typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : ''
+    const password = typeof req.body?.password === 'string' ? req.body.password : ''
+
+    if (
+      !EMAIL_PATTERN.test(email) ||
+      email.length > 254 ||
+      password.length === 0 ||
+      password.length > 128
+    ) {
+      res.status(400).json({ error: 'Informe um e-mail e uma senha válidos.' })
+      return
+    }
+
+    const user = await authRepository.findUserByEmail(email)
+    const passwordMatches = await bcrypt.compare(
+      password,
+      user?.password_hash ?? DUMMY_PASSWORD_HASH,
+    )
+
+    if (!user || !passwordMatches) {
+      res.status(401).json({ error: 'E-mail ou senha inválidos.' })
+      return
+    }
+
+    if (!['teacher', 'admin'].includes(user.role)) {
+      res.status(403).json({
+        error: 'Apenas professores e administradores podem acessar as reservas.',
+      })
+      return
+    }
+
+    const sessionToken = randomBytes(32).toString('base64url')
+    const tokenHash = createHash('sha256').update(sessionToken).digest('hex')
+    const expiresAt = new Date(Date.now() + SESSION_DURATION_MS)
+
+    await authRepository.createSession(user.id, tokenHash, expiresAt)
+    res.cookie(SESSION_COOKIE, sessionToken, {
+      ...cookieOptions,
+      maxAge: SESSION_DURATION_MS,
+    })
+    res.status(200).json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
+    })
+  })
+
+  /**
+   * Retorna a conta atual quando o cookie da sessão é válido.
+   *
+   * @route GET /api/auth/me
+   * @param {Object} req
+   * @param {Object} res
+   * @returns {Promise&lt;void>}
+   */
+  router.get('/me', async (req, res) => {
+    const sessionToken = req.cookies?.[SESSION_COOKIE]
+    if (!sessionToken) {
+      res.status(401).json({ error: 'Autenticação necessária.' })
+      return
+    }
+
+    const tokenHash = createHash('sha256').update(sessionToken).digest('hex')
+    const user = await authRepository.findActiveSession(tokenHash)
+
+    if (!user || !['teacher', 'admin'].includes(user.role)) {
+      res.clearCookie(SESSION_COOKIE, cookieOptions)
+      res.status(401).json({ error: 'Sessão inválida ou expirada.' })
+      return
+    }
+
+    res.status(200).json({
+      user: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+      },
+    })
+  })
+
+  /**
+   * Revoga a sessão atual no banco e remove o cookie do navegador.
+   *
+   * @route POST /api/auth/logout
+   * @param {Object} req
+   * @param {Object} res
+   * @returns {Promise&lt;void>}
+   */
+  router.post('/logout', async (req, res) => {
+    const sessionToken = req.cookies?.[SESSION_COOKIE]
+    if (sessionToken) {
+      const tokenHash = createHash('sha256').update(sessionToken).digest('hex')
+      await authRepository.deleteSession(tokenHash)
+    }
+
+    res.clearCookie(SESSION_COOKIE, cookieOptions)
+    res.status(204).end()
+  })
+
+  return router
+}
+</code></pre>
+        </article>
+    </section>
+
+
+
+
+</div>
+
+<nav>
+    <h2><a href="index.html">Home</a></h2><h3>Global</h3><ul><li><a href="global.html#createApp">createApp</a></li><li><a href="global.html#createAuthRepository">createAuthRepository</a></li><li><a href="global.html#createAuthRouter">createAuthRouter</a></li><li><a href="global.html#createSession">createSession</a></li><li><a href="global.html#createUser">createUser</a></li><li><a href="global.html#deleteSession">deleteSession</a></li><li><a href="global.html#findActiveSession">findActiveSession</a></li><li><a href="global.html#findUserByEmail">findUserByEmail</a></li><li><a href="global.html#loadConfig">loadConfig</a></li><li><a href="global.html#promptPassword">promptPassword</a></li><li><a href="global.html#seedUsers">seedUsers</a></li><li><a href="global.html#startServer">startServer</a></li></ul>
+</nav>
+
+<br class="clear">
+
+<footer>
+    Documentation generated by <a href="https://github.com/jsdoc/jsdoc">JSDoc 4.0.5</a> on Fri Nov 06 2026 21:11:42 GMT-0300 (Horário Padrão de Brasília)
+</footer>
+
+<script> prettyPrint(); </script>
+<script src="scripts/linenumber.js"> </script>
+</body>
+</html>
