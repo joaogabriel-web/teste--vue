@@ -55,7 +55,7 @@ function promptPassword() {
  * @returns {Promise<void>}
  */
 async function createUser() {
-  const [rawEmail, name] = process.argv.slice(2)
+  const [rawEmail, name, role = 'teacher'] = process.argv.slice(2)
   const email = rawEmail?.trim().toLowerCase()
 
   if (
@@ -63,9 +63,10 @@ async function createUser() {
     email.length > 254 ||
     !name?.trim() ||
     name.trim().length > 120 ||
-    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+    !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+    !['student', 'teacher', 'admin'].includes(role)
   ) {
-    throw new Error('Uso: npm run create-user -- <email> "<nome>"')
+    throw new Error('Uso: npm run create-user -- <email> "<nome>" [student|teacher|admin]')
   }
 
   const password = await promptPassword()
@@ -79,11 +80,11 @@ async function createUser() {
   try {
     const passwordHash = await bcrypt.hash(password, 12)
     await pool.execute(
-      `INSERT INTO users (id, email, name, password_hash)
-       VALUES (?, ?, ?, ?)`,
-      [randomUUID(), email, name.trim(), passwordHash],
+      `INSERT INTO users (id, email, name, password_hash, role)
+       VALUES (?, ?, ?, ?, ?)`,
+      [randomUUID(), email, name.trim(), passwordHash, role],
     )
-    console.info(`Conta criada para ${email}.`)
+    console.info(`Conta ${role} criada para ${email}.`)
   } finally {
     await pool.end()
   }

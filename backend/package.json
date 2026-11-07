@@ -11,6 +11,7 @@
     "dev": "node --watch src/server.js",
     "test": "node --test",
     "create-user": "node src/create-user.js",
+    "seed-users": "node src/seed-users.js",
     "docs": "jsdoc -c jsdoc.json"
   },
   "dependencies": {

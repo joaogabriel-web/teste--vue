@@ -22,12 +22,27 @@ docker compose up -d
 Get-Content .\sql\schema.sql | mysql -u root -p
 ```
 
-Crie uma conta de funcionário/gerente (a senha é digitada sem aparecer no
-terminal):
+Se o banco já foi criado antes do campo `role`, aplique a migração:
 
 ```powershell
-npm run create-user -- professora@escola.edu.br "Ana Costa"
+Get-Content .\sql\migrate-user-roles.sql | mysql -u root -p
 ```
+
+Para criar contas locais de demonstração, informe uma senha temporária sem
+salvá-la no código ou no arquivo `.env`:
+
+```powershell
+$env:DEMO_PASSWORD = Read-Host "Senha temporaria (minimo 12 caracteres)"
+npm run seed-users
+Remove-Item Env:DEMO_PASSWORD
+```
+
+O seed cria um aluno, dois professores e um administrador. Alunos são
+deliberadamente impedidos de iniciar sessão na área de reservas.
+
+Para criar uma conta individual depois, execute `npm run create-user --
+email@escola.edu.br "Nome" teacher` (`student`, `teacher` ou `admin`). A senha
+será solicitada sem aparecer no terminal.
 
 Inicie a API:
 

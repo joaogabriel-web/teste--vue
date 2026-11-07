@@ -3,14 +3,34 @@ import { after, beforeEach, test } from 'node:test'
 import bcrypt from 'bcryptjs'
 import { createApp } from '../src/app.js'
 
+// Senha: ReserveMe123!
+
 const password = 'correct-horse-battery'
 const account = {
   id: '39b168c9-dfd6-4bfb-a0ec-950f857c887f',
   email: 'professora@escola.edu.br',
   name: 'Ana Costa',
+  role: 'teacher',
   active: true,
   password_hash: await bcrypt.hash(password, 4),
 }
+const student = {
+  id: '9988675f-0278-46a6-8a25-97234ac11d1f',
+  email: 'aluno@escola.edu.br',
+  name: 'Aluno',
+  role: 'student',
+  active: true,
+  password_hash: await bcrypt.hash(password, 4),
+}
+const admin = {
+  id: '034fbd2b-6e8d-4c6e-80ec-69a0bd2d0805',
+  email: 'admin@escola.edu.br',
+  name: 'Administrador',
+  role: 'admin',
+  active: true,
+  password_hash: await bcrypt.hash(password, 4),
+}
+const accounts = [account, student, admin]
 const sessions = new Map()
 
 beforeEach(() => {
@@ -19,15 +39,21 @@ beforeEach(() => {
 
 const authRepository = {
   async findUserByEmail(email) {
-    return email === account.email && account.active ? account : null
+    return accounts.find((user) => user.email === email && user.active) ?? null
   },
   async createSession(userId, tokenHash, expiresAt) {
     sessions.set(tokenHash, { userId, expiresAt })
   },
   async findActiveSession(tokenHash) {
     const session = sessions.get(tokenHash)
-    if (!session || session.expiresAt <= new Date() || !account.active) return null
-    return { id: account.id, email: account.email, name: account.name }
+    const user = accounts.find((entry) => entry.id === session?.userId)
+    if (!session || session.expiresAt <= new Date() || !user?.active) return null
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    }
   },
   async deleteSession(tokenHash) {
     sessions.delete(tokenHash)
@@ -107,7 +133,12 @@ test('creates an HttpOnly cookie and returns only public account data', async ()
 
   assert.equal(response.status, 200)
   assert.deepEqual(await response.json(), {
-    user: { id: account.id, email: account.email, name: account.name },
+    user: {
+      id: account.id,
+      email: account.email,
+      name: account.name,
+      role: account.role,
+    },
   })
   const cookie = response.headers.get('set-cookie')
   assert.match(cookie, /HttpOnly/i)
@@ -134,7 +165,12 @@ test('returns the account for a valid session without exposing its password hash
   assert.equal(response.status, 200)
   const result = await response.json()
   assert.deepEqual(result, {
-    user: { id: account.id, email: account.email, name: account.name },
+    user: {
+      id: account.id,
+      email: account.email,
+      name: account.name,
+      role: account.role,
+    },
   })
   assert.equal(JSON.stringify(result).includes(account.password_hash), false)
 })
@@ -156,4 +192,28 @@ test('revokes the server session when logging out', async () => {
   const currentUser = await request('/api/auth/me', { headers: { cookie } })
   assert.equal(currentUser.status, 401)
   assert.equal(sessions.size, 0)
+})
+
+test('denies students access without creating a session', async () => {
+  const response = await request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: student.email, password }),
+  })
+
+  assert.equal(response.status, 403)
+  assert.deepEqual(await response.json(), {
+    error: 'Apenas professores e administradores podem acessar as reservas.',
+  })
+  assert.equal(response.headers.get('set-cookie'), null)
+  assert.equal(sessions.size, 0)
+})
+
+test('allows an admin to log in', async () => {
+  const response = await request('/api/auth/login', {
+    method: 'POST',
+    body: JSON.stringify({ email: admin.email, password }),
+  })
+
+  assert.equal(response.status, 200)
+  assert.equal((await response.json()).user.role, 'admin')
 })

@@ -61,6 +61,13 @@ export function createAuthRouter({ authRepository, cookieSecure }) {
       return
     }
 
+    if (!['teacher', 'admin'].includes(user.role)) {
+      res.status(403).json({
+        error: 'Apenas professores e administradores podem acessar as reservas.',
+      })
+      return
+    }
+
     const sessionToken = randomBytes(32).toString('base64url')
     const tokenHash = createHash('sha256').update(sessionToken).digest('hex')
     const expiresAt = new Date(Date.now() + SESSION_DURATION_MS)
@@ -75,6 +82,7 @@ export function createAuthRouter({ authRepository, cookieSecure }) {
         id: user.id,
         email: user.email,
         name: user.name,
+        role: user.role,
       },
     })
   })
@@ -97,7 +105,7 @@ export function createAuthRouter({ authRepository, cookieSecure }) {
     const tokenHash = createHash('sha256').update(sessionToken).digest('hex')
     const user = await authRepository.findActiveSession(tokenHash)
 
-    if (!user) {
+    if (!user || !['teacher', 'admin'].includes(user.role)) {
       res.clearCookie(SESSION_COOKIE, cookieOptions)
       res.status(401).json({ error: 'Sessão inválida ou expirada.' })
       return
@@ -108,6 +116,7 @@ export function createAuthRouter({ authRepository, cookieSecure }) {
         id: user.id,
         email: user.email,
         name: user.name,
+        role: user.role,
       },
     })
   })

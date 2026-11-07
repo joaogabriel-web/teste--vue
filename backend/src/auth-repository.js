@@ -14,7 +14,7 @@ export function createAuthRepository(pool) {
      */
     async findUserByEmail(email) {
       const [rows] = await pool.execute(
-        `SELECT id, email, name, password_hash, active
+        `SELECT id, email, name, password_hash, role, active
          FROM users
          WHERE email = ? AND active = TRUE
          LIMIT 1`,
@@ -50,7 +50,7 @@ export function createAuthRepository(pool) {
      */
     async findActiveSession(tokenHash) {
       const [rows] = await pool.execute(
-        `SELECT users.id, users.email, users.name
+        `SELECT users.id, users.email, users.name, users.role
          FROM auth_sessions
          INNER JOIN users ON users.id = auth_sessions.user_id
          WHERE auth_sessions.token_hash = ?
